@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple
 from . import ui
 from .api_client import NordVpnApiClient
 from .exceptions import ApiClientError, ConfigurationError, NordVpnConnectionError, NoServersAvailableError, UnsupportedPlatformError
+from .linux_controller import LinuxVpnController, find_nordvpn_executable as find_nordvpn_executable_linux
 from .settings import RotationSettings
 from .windows_controller import WindowsVpnController, find_nordvpn_executable
 
@@ -85,9 +86,7 @@ class VpnSwitcher:
                 controller_type = WindowsVpnController
             case "Linux":
                 fakeua_os = "Linux"
-                controller_type = None
-                print(f"[nordvpn-switcher-pro] Linux is not yet supported. {_message}")
-                raise UnsupportedPlatformError(f"Linux is not yet supported. {_message}")
+                controller_type = LinuxVpnController
             case "Darwin":
                 fakeua_os = "Mac OS X"
                 controller_type = None
@@ -106,8 +105,8 @@ class VpnSwitcher:
             self._clear_server_cache()
 
         # --- Instance variables for an active session ---
-        self._controller_type: type[WindowsVpnController] | None = controller_type  # Store the controller class for later instantiation
-        self._controller: WindowsVpnController | None = None  # Will be initialized when session starts
+        self._controller_type: type | None = controller_type  # Store the controller class for later instantiation
+        self._controller: object | None = None  # Will be initialized when session starts
         self._session_coordinates: Dict | None = None
         self._last_known_ip: str | None = None
         self._current_server_pool: List[Dict] = []
@@ -334,10 +333,15 @@ class VpnSwitcher:
             return RotationSettings.load(self.settings_path)
 
         # If a custom path is provided, use it; otherwise, try to find automatically
-        if custom_exe_path and os.path.exists(custom_exe_path):
+        if custom_exe_path:
             exe_path = custom_exe_path
         else:
-            exe_path = find_nordvpn_executable()
+            if _platform.system() == "Windows":
+                exe_path = find_nordvpn_executable()
+            elif _platform.system() == "Linux":
+                exe_path = find_nordvpn_executable_linux()
+            else:
+                raise UnsupportedPlatformError("Could not resolve NordVPN executable on this platform.")
         try:
             criteria, countries = ui.get_user_criteria(self.api_client)
         except SystemExit as e:

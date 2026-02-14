@@ -8,7 +8,7 @@ setup(
     version="2.0.1",
     author="Sebastian Hanisch",
     author_email="contact.sebastian.hanisch@gmail.com",
-    description="An advanced Python library to automate NordVPN server switching on Windows.",
+    description="An advanced Python library to automate NordVPN server switching on Windows and Linux.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Sebastian7700/nordvpn-switcher-pro",
@@ -17,6 +17,7 @@ setup(
         "requests>=2.20.0",
         "questionary>=1.10.0",
         "fake-useragent>=1.2.0",
+        "psutil>=5.9.0",
     ],
     classifiers=[
         # How mature is this project? Common values are
@@ -43,9 +44,10 @@ setup(
 
         # Specify the OS this project is intended for
         "Operating System :: Microsoft :: Windows",
+        "Operating System :: POSIX :: Linux",
     ],
     python_requires='>=3.10',
-    keywords='nordvpn vpn switcher automation web-scraping ip-rotation rotate-ip windows api',
+    keywords='nordvpn vpn switcher automation web-scraping ip-rotation rotate-ip windows linux api',
     project_urls={
         'Bug Reports': 'https://github.com/Sebastian7700/nordvpn-switcher-pro/issues',
         'Source': 'https://github.com/Sebastian7700/nordvpn-switcher-pro/',

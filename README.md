@@ -3,9 +3,9 @@
 [![PyPI version](https://badge.fury.io/py/nordvpn-switcher-pro.svg)](https://badge.fury.io/py/nordvpn-switcher-pro)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Python versions](https://img.shields.io/pypi/pyversions/nordvpn-switcher-pro.svg)
-![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue.svg)
 
-**NordVPN Switcher Pro** is a powerful Python library for automating NordVPN server connections on Windows. It is designed for developers and automation engineers who need reliable, criteria-based IP rotation for tasks like web scraping, data collection, and application testing.
+**NordVPN Switcher Pro** is a powerful Python library for automating NordVPN server connections on Windows and Linux. It is designed for developers and automation engineers who need reliable, criteria-based IP rotation for tasks like web scraping, data collection, and application testing.
 
 The library provides a simple interface to a complex process:
 - It uses a **stable, current NordVPN API**.
@@ -22,16 +22,28 @@ The core focus is providing robust control over the NordVPN client. It does not 
 - **Smart Caching**: Remembers recently used servers and avoids them for a configurable duration (default: 24 hours).
 - **Resilient**: Gracefully handles connection failures and automatically falls back to the least-recently-used server if all fresh options are exhausted.
 - **Headless Operation**: After the initial setup, it runs without any prompts, making it perfect for automated scripts and servers.
-- **Modular Design**: Built with a clear separation between the core logic and the Windows controller, making it possible for the community to add support for Linux or macOS in the future.
+- **Cross-Platform Controllers**: Uses dedicated OS-specific controllers for Windows and Linux while keeping one unified `VpnSwitcher` workflow.
 
 > **Note on Platform Support**
-> Currently, **NordVPN Switcher Pro** officially supports **Windows only**, as it relies on the NordVPN for Windows command-line interface. The project is designed to be extensible, and contributions for a `LinuxVpnController` or `MacVpnController` are welcome!
+> **NordVPN Switcher Pro** currently supports **Windows** and **Linux**.
+> - **Windows** uses `NordVPN.exe`.
+> - **Linux** uses the system `nordvpn` CLI command.
+>
+> macOS is not supported yet.
 
 ## Installation
 
 ```bash
 pip install nordvpn-switcher-pro
 ```
+
+## Platform Prerequisites
+
+- **Windows**: Install and log in to the NordVPN desktop app (`NordVPN.exe`).
+- **Linux**:
+    - Install and log in to the NordVPN CLI (`nordvpn`).
+    - Ensure `nordvpn` is available in your `PATH`.
+    - Ensure a DNS cache flush utility is available: `resolvectl` or `systemd-resolve`.
 
 ## Quick Start
 
@@ -178,6 +190,8 @@ If NordVPN is installed in a non-standard location, you can specify the path to 
 ```python
 switcher = VpnSwitcher(custom_exe_path="C:/Path/To/NordVPN.exe")
 ```
+
+On Linux, this can also be used to point to a custom `nordvpn` binary path (for most systems, auto-detection via `PATH` is sufficient).
 
 This is optional and only needed if auto-detection fails. The path will be saved to your `nordvpn_settings.json` file.
 
@@ -342,6 +356,7 @@ finally:
 The library is composed of a few key components:
 - `VpnSwitcher`: The main class that orchestrates the entire process.
 - `WindowsVpnController`: A dedicated module that interacts with the `NordVPN.exe` command-line interface.
+- `LinuxVpnController`: A dedicated module that interacts with the Linux `nordvpn` command-line interface.
 - `NordVpnApiClient`: A client that communicates with the public NordVPN API to fetch server lists and data.
 - `RotationSettings`: A data class for saving and loading your configuration and server cache.
 
