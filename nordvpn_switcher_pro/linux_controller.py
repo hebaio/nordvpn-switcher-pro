@@ -99,6 +99,72 @@ class LinuxVpnController:
 
         return result
 
+    def _get_status_output(self) -> str:
+        """
+        Returns the raw output of `nordvpn status`.
+
+        Raises:
+            NordVpnCliError: If the status command fails.
+        """
+        return self._run_command(["status"], timeout=20).stdout
+
+    @staticmethod
+    def _parse_status_output(output: str) -> dict:
+        """
+        Parses key-value style output from `nordvpn status`.
+
+        Args:
+            output: Raw CLI output.
+
+        Returns:
+            A dictionary of lower-cased keys to string values.
+        """
+        parsed = {}
+        for line in output.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            parsed[key.strip().lower()] = value.strip()
+        return parsed
+
+    def get_status(self) -> str:
+        """
+        Gets the current VPN status as reported by the NordVPN CLI.
+
+        Returns:
+            A human-readable status string (e.g., 'Connected', 'Disconnected').
+        """
+        parsed = self._parse_status_output(self._get_status_output())
+        return parsed.get("status", "Unknown")
+
+    def get_current_ip(self) -> str | None:
+        """
+        Gets the currently reported VPN/public IP from CLI status output.
+
+        Returns:
+            The IP string if available, otherwise None.
+        """
+        parsed = self._parse_status_output(self._get_status_output())
+        for key in ("your new ip", "current ip", "ip"):
+            value = parsed.get(key)
+            if value and value.lower() not in {"n/a", "none", "-"}:
+                return value
+        return None
+
+    def get_connected_server(self) -> str | None:
+        """
+        Gets the currently connected NordVPN server from CLI status output.
+
+        Returns:
+            The server name/host if connected, otherwise None.
+        """
+        parsed = self._parse_status_output(self._get_status_output())
+        for key in ("current server", "server"):
+            value = parsed.get(key)
+            if value and value.lower() not in {"n/a", "none", "-"}:
+                return value
+        return None
+
     def _is_connected(self) -> bool:
         """
         Checks current VPN connection status.
@@ -109,10 +175,8 @@ class LinuxVpnController:
         Raises:
             NordVpnCliError: If `nordvpn status` fails.
         """
-        status = self._run_command(["status"], timeout=20).stdout.lower()
-        return "status: connected" in status or (
-            "connected" in status and "disconnected" not in status
-        )
+        status = self.get_status().strip().lower()
+        return status == "connected" or ("connected" in status and "disconnected" not in status)
 
     def _wait_for_status(self, connected: bool, timeout: int = 45, interval: float = 1.0):
         """

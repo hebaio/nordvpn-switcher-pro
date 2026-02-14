@@ -127,6 +127,25 @@ class VpnSwitcher:
         # Geo-rotation state
         self._server_loc_lookup: Dict = {}
         self._last_connected_loc_id: int | None = None
+
+    def _get_or_create_controller(self):
+        """
+        Returns an initialized platform controller, creating one lazily if needed.
+
+        Returns:
+            A platform-specific VPN controller instance.
+
+        Raises:
+            ConfigurationError: If no controller is available for the platform.
+        """
+        if self._controller:
+            return self._controller
+
+        if not self._controller_type:
+            raise ConfigurationError("No VPN controller available for your platform")
+
+        self._controller = self._controller_type(self.settings.exe_path)
+        return self._controller
     
     def start_session(self):
         """
@@ -146,7 +165,7 @@ class VpnSwitcher:
         
         self._is_session_active = True
         if self._controller_type:
-            self._controller = self._controller_type(self.settings.exe_path)
+            self._controller = self._get_or_create_controller()
             self.api_client.register_dns_flusher(self._controller.flush_dns_cache)
             self._controller.disconnect()
         else:
@@ -270,6 +289,54 @@ class VpnSwitcher:
         self._last_connected_loc_id = self._get_loc_key(target_server)
         self.settings.used_servers_cache[target_server['id']] = time.time()
         self.settings.save(self.settings_path)
+
+    def get_status(self) -> str:
+        """
+        Returns the current NordVPN connection status.
+
+        Returns:
+            A status string from the NordVPN CLI, e.g. 'Connected' or 'Disconnected'.
+        """
+        controller = self._get_or_create_controller()
+        return controller.get_status()
+
+    def get_current_ip(self) -> str:
+        """
+        Returns the current public IP address.
+
+        This method primarily uses the NordVPN API helper endpoint for reliability.
+        If unavailable, it falls back to CLI-reported IP if present.
+
+        Returns:
+            The current public IP as a string.
+
+        Raises:
+            ApiClientError: If the IP cannot be resolved from API or CLI fallback.
+        """
+        try:
+            ip_data = self.api_client.get_current_ip_info(error_message_prefix="Failed to fetch current IP")
+            ip = ip_data.get("ip")
+            if ip:
+                return ip
+        except ApiClientError:
+            pass
+
+        controller = self._get_or_create_controller()
+        cli_ip = controller.get_current_ip()
+        if cli_ip:
+            return cli_ip
+
+        raise ApiClientError("Could not determine current public IP from API or CLI status output.")
+
+    def get_connected_server(self) -> str | None:
+        """
+        Returns the currently connected NordVPN server.
+
+        Returns:
+            Server hostname/name if connected, otherwise None.
+        """
+        controller = self._get_or_create_controller()
+        return controller.get_connected_server()
 
     def terminate(self, close_app: bool = False):
         """

@@ -23,6 +23,7 @@ The core focus is providing robust control over the NordVPN client. It does not 
 - **Resilient**: Gracefully handles connection failures and automatically falls back to the least-recently-used server if all fresh options are exhausted.
 - **Headless Operation**: After the initial setup, it runs without any prompts, making it perfect for automated scripts and servers.
 - **Cross-Platform Controllers**: Uses dedicated OS-specific controllers for Windows and Linux while keeping one unified `VpnSwitcher` workflow.
+- **Connection Introspection**: Query current VPN status, public IP, and connected server directly from `VpnSwitcher`.
 
 > **Note on Platform Support**
 > **NordVPN Switcher Pro** currently supports **Windows** and **Linux**.
@@ -181,6 +182,25 @@ Here are a few GIFs demonstrating how to create different rotation strategies us
 </details>
 
 ## Advanced Usage
+
+<details>
+<summary><strong>Tip: Check VPN Status, IP, and Connected Server</strong></summary>
+
+You can query the current connection state at any time:
+
+```python
+switcher = VpnSwitcher()
+
+status = switcher.get_status()  # e.g. "Connected" or "Disconnected"
+ip = switcher.get_current_ip()  # current public IP
+server = switcher.get_connected_server()  # e.g. "us1234.nordvpn.com" or None
+
+print("Status:", status)
+print("IP:", ip)
+print("Server:", server)
+```
+
+</details>
 
 <details>
 <summary><strong>Tip: Custom NordVPN Executable Path</strong></summary>
