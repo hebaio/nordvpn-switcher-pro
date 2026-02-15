@@ -24,6 +24,7 @@ The core focus is providing robust control over the NordVPN client. It does not 
 - **Headless Operation**: After the initial setup, it runs without any prompts, making it perfect for automated scripts and servers.
 - **Cross-Platform Controllers**: Uses dedicated OS-specific controllers for Windows and Linux while keeping one unified `VpnSwitcher` workflow.
 - **Connection Introspection**: Query current VPN status, public IP, and connected server directly from `VpnSwitcher`.
+    - On Windows, status is resolved by matching your current public IP to NordVPN server IPs fetched from the API (because the Windows CLI has no status command). This might not work for dedicated IP's and obfuscated servers. 
 
 > **Note on Platform Support**
 > **NordVPN Switcher Pro** currently supports **Windows** and **Linux**.

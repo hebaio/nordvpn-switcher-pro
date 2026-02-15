@@ -168,3 +168,20 @@ class NordVpnApiClient:
             "fields[servers.locations.country.city.name]": "",
         })
         return self._get(url, params=params)
+
+    def get_servers_for_ip_lookup(self) -> List[Dict]:
+        """
+        Fetches server metadata needed for IP-to-server lookup.
+
+        Returns:
+            A list of server dictionaries including id, name, hostname and station (IP).
+        """
+        url = "https://api.nordvpn.com/v1/servers"
+        params = {
+            "fields[servers.id]": "",
+            "fields[servers.name]": "",
+            "fields[servers.hostname]": "",
+            "fields[servers.station]": "",
+            "fields[servers.status]": "",
+        }
+        return self._get(url, params=params)

@@ -1,8 +1,11 @@
 import os
+import ipaddress
 import subprocess
 import time
 import psutil
-from typing import List
+from typing import Any, Dict, List
+
+import requests
 
 from .exceptions import ConfigurationError, NordVpnCliError
 
@@ -51,6 +54,7 @@ class WindowsVpnController:
             raise ConfigurationError(f"Executable not found at path: {exe_path}")
         self.exe_path = exe_path
         self.cwd_path = os.path.dirname(exe_path)
+        self._server_ip_lookup: Dict[str, Dict[str, Any]] = {}
 
     def _wait_for_cli_ready(self, threshold_mb: int = 200, stability_window: int = 6, variance_pct: float = 1.0, timeout: int = 60):
         """
@@ -165,33 +169,115 @@ class WindowsVpnController:
         except Exception as e:
             raise NordVpnCliError(f"Unexpected error while running '{command}': {e}")
 
-    def _get_status_output(self) -> str:
-        """
-        Returns the raw output of the NordVPN status command.
-
-        Raises:
-            NordVpnCliError: If the status command fails.
-        """
-        return self._run_command(["-status"], timeout=20).stdout
-
     @staticmethod
-    def _parse_status_output(output: str) -> dict:
+    def _normalize_ip(value: str | None) -> str | None:
         """
-        Parses key-value style output from NordVPN status.
-
-        Args:
-            output: Raw CLI output.
+        Normalizes an IP string to canonical format.
 
         Returns:
-            A dictionary of lower-cased keys to string values.
+            Canonical IP string or None if parsing fails.
         """
-        parsed = {}
-        for line in output.splitlines():
-            if ":" not in line:
+        if not value:
+            return None
+
+        candidate = value.strip()
+        if not candidate or candidate.lower() in {"n/a", "none", "-"}:
+            return None
+
+        if candidate.startswith("[") and "]" in candidate:
+            candidate = candidate[1:candidate.index("]")]
+
+        if "%" in candidate:
+            candidate = candidate.split("%", 1)[0]
+
+        if "/" in candidate:
+            candidate = candidate.split("/", 1)[0]
+
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            pass
+
+        if candidate.count(":") == 1 and "." in candidate:
+            host_part = candidate.rsplit(":", 1)[0]
+            try:
+                return str(ipaddress.ip_address(host_part))
+            except ValueError:
+                return None
+
+        return None
+
+    def set_server_ip_lookup(self, servers: List[Dict[str, Any]]):
+        """
+        Builds a fast lookup map from server station IP -> server metadata.
+
+        Args:
+            servers: List of server dictionaries containing at least `station`.
+        """
+        lookup: Dict[str, Dict[str, Any]] = {}
+        for server in servers:
+            normalized_station = self._normalize_ip(server.get("station"))
+            if not normalized_station:
                 continue
-            key, value = line.split(":", 1)
-            parsed[key.strip().lower()] = value.strip()
-        return parsed
+            lookup[normalized_station] = {
+                "id": server.get("id"),
+                "name": server.get("name"),
+                "hostname": server.get("hostname"),
+                "station": server.get("station"),
+                "status": server.get("status"),
+            }
+        self._server_ip_lookup = lookup
+
+    def has_server_ip_lookup(self) -> bool:
+        """Returns True when server station IP lookup has been initialized."""
+        return bool(self._server_ip_lookup)
+
+    def _get_public_ip(self) -> str | None:
+        """
+        Resolves the current public IP via NordVPN API insights endpoint.
+
+        Returns:
+            Current public IP string or None if not available.
+
+        Raises:
+            NordVpnCliError: If the lookup request fails.
+        """
+        url = "https://api.nordvpn.com/v1/helpers/ips/insights"
+        try:
+            response = requests.get(url, timeout=20)
+            response.raise_for_status()
+            payload = response.json() or {}
+        except requests.RequestException as e:
+            raise NordVpnCliError(f"Failed to resolve public IP for status lookup: {e}") from e
+
+        value = payload.get("ip")
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    def _resolve_status_snapshot(self) -> Dict[str, str]:
+        """
+        Resolves Windows VPN status using current public IP and server IP lookup.
+
+        Returns:
+            Dictionary with status, IP, and server fields when available.
+        """
+        current_ip = self._get_public_ip()
+        normalized_ip = self._normalize_ip(current_ip)
+        server = self._server_ip_lookup.get(normalized_ip) if normalized_ip else None
+
+        snapshot: Dict[str, str] = {
+            "status": "Connected" if server else "Disconnected",
+        }
+        if current_ip:
+            snapshot["current ip"] = current_ip
+        if server:
+            hostname = server.get("hostname")
+            name = server.get("name")
+            snapshot["current server"] = hostname or name
+            if name:
+                snapshot["server name"] = str(name)
+            if hostname:
+                snapshot["server hostname"] = str(hostname)
+        return snapshot
 
     def get_status(self) -> str:
         """
@@ -200,8 +286,16 @@ class WindowsVpnController:
         Returns:
             A human-readable status string (e.g., 'Connected', 'Disconnected').
         """
-        parsed = self._parse_status_output(self._get_status_output())
-        return parsed.get("status", "Unknown")
+        return self._resolve_status_snapshot().get("status", "Unknown")
+
+    def get_status_full(self) -> dict:
+        """
+        Gets the full parsed status output from the NordVPN CLI.
+
+        Returns:
+            A dictionary containing all key-value pairs from the CLI status output.
+        """
+        return self._resolve_status_snapshot()
 
     def get_current_ip(self) -> str | None:
         """
@@ -210,12 +304,7 @@ class WindowsVpnController:
         Returns:
             The IP string if available, otherwise None.
         """
-        parsed = self._parse_status_output(self._get_status_output())
-        for key in ("your new ip", "current ip", "ip"):
-            value = parsed.get(key)
-            if value and value.lower() not in {"n/a", "none", "-"}:
-                return value
-        return None
+        return self._get_public_ip()
 
     def get_connected_server(self) -> str | None:
         """
@@ -224,12 +313,8 @@ class WindowsVpnController:
         Returns:
             The server name/host if connected, otherwise None.
         """
-        parsed = self._parse_status_output(self._get_status_output())
-        for key in ("current server", "server"):
-            value = parsed.get(key)
-            if value and value.lower() not in {"n/a", "none", "-"}:
-                return value
-        return None
+        snapshot = self._resolve_status_snapshot()
+        return snapshot.get("current server")
 
     def connect(self, target: str, is_group: bool = False):
         """

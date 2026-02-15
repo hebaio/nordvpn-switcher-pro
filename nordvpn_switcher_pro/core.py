@@ -167,6 +167,7 @@ class VpnSwitcher:
         if self._controller_type:
             self._controller = self._get_or_create_controller()
             self.api_client.register_dns_flusher(self._controller.flush_dns_cache)
+            self._initialize_windows_status_lookup()
             self._controller.disconnect()
         else:
             raise ConfigurationError("No VPN controller available for your platform")
@@ -306,7 +307,19 @@ class VpnSwitcher:
             A status string from the NordVPN CLI, e.g. 'Connected' or 'Disconnected'.
         """
         controller = self._get_or_create_controller()
+        self._initialize_windows_status_lookup()
         return controller.get_status()
+
+    def get_status_full(self) -> dict:
+        """
+        Returns the full parsed status output from the NordVPN CLI.
+
+        Returns:
+            A dictionary containing all key-value pairs from the CLI status output.
+        """
+        controller = self._get_or_create_controller()
+        self._initialize_windows_status_lookup()
+        return controller.get_status_full()
 
     def get_current_ip(self) -> str:
         """
@@ -344,7 +357,28 @@ class VpnSwitcher:
             Server hostname/name if connected, otherwise None.
         """
         controller = self._get_or_create_controller()
+        self._initialize_windows_status_lookup()
         return controller.get_connected_server()
+
+    def _initialize_windows_status_lookup(self):
+        """
+        Initializes IP-to-server lookup used by Windows status introspection.
+
+        On Windows, the CLI does not expose a status command. We therefore map
+        the currently observed public IP to NordVPN server station IPs fetched
+        from the API. The lookup is cached in-memory for O(1) status checks.
+        """
+        controller = self._controller if self._controller else self._get_or_create_controller()
+        if not isinstance(controller, WindowsVpnController):
+            return
+        if controller.has_server_ip_lookup():
+            return
+
+        try:
+            servers = self.api_client.get_servers_for_ip_lookup()
+            controller.set_server_ip_lookup(servers)
+        except ApiClientError as e:
+            print(f"\x1b[33mWarning: Failed to initialize Windows IP status lookup: {e}\x1b[0m")
 
     def terminate(self, close_app: bool = False):
         """

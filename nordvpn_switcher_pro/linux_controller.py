@@ -137,6 +137,15 @@ class LinuxVpnController:
         parsed = self._parse_status_output(self._get_status_output())
         return parsed.get("status", "Unknown")
 
+    def get_status_full(self) -> dict:
+        """
+        Gets the full parsed status output from the NordVPN CLI.
+
+        Returns:
+            A dictionary containing all key-value pairs from the CLI status output.
+        """
+        return self._parse_status_output(self._get_status_output())
+
     def get_current_ip(self) -> str | None:
         """
         Gets the currently reported VPN/public IP from CLI status output.
