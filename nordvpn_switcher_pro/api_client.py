@@ -13,6 +13,7 @@ class NordVpnApiClient:
     _DEFAULT_SERVER_FIELDS = {
         "fields[servers.id]": "",
         "fields[servers.name]": "",
+        "fields[servers.hostname]": "",
         "fields[servers.load]": "",
         "fields[servers.locations.id]": "",
         "fields[servers.locations.country.id]": ""

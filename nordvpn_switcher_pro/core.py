@@ -267,6 +267,14 @@ class VpnSwitcher:
             self._fetch_and_build_pool(increase_limit=False)
             
         target_server = self._get_next_server()
+        connect_target = target_server.get('name')
+
+        # Linux NordVPN CLI expects server code format (e.g., 'dk202').
+        # Prefer hostname from API (e.g., 'dk202.nordvpn.com') and derive its short code.
+        if isinstance(self._controller, LinuxVpnController):
+            hostname = target_server.get('hostname')
+            if isinstance(hostname, str) and hostname.strip():
+                connect_target = hostname.strip().split('.', 1)[0].lower()
 
         logging_name = f"'{target_server['name']}'"
         if target_server.get('locations'):
@@ -278,7 +286,7 @@ class VpnSwitcher:
                     break
 
         try:
-            self._controller.connect(target_server['name'])
+            self._controller.connect(connect_target)
             self._verify_connection(logging_name)
         except NordVpnConnectionError as e:
             ui.display_critical_error(str(e))
@@ -709,6 +717,7 @@ class VpnSwitcher:
             server_dict = {
                 'id': server_data.get('id'),
                 'name': server_data.get('name'),
+                'hostname': server_data.get('hostname'),
                 'load': server_data.get('load'),
                 'locations': server_locations,  # Now includes properly nested city data
             }
