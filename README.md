@@ -64,8 +64,8 @@ switcher = VpnSwitcher()
 
 try:
     # 2. Start the session.
-    # This prepares the switcher, disconnects from any current VPN,
-    # and fetches the initial server list.
+    # This prepares the switcher and fetches the initial server list.
+    # By default it disconnects any existing VPN connection first.
     switcher.start_session()
 
     for i in range(3):
@@ -231,6 +231,21 @@ switcher = VpnSwitcher(cache_expiry_hours=1)
 switcher = VpnSwitcher(cache_expiry_hours=168)
 ```
 A shorter duration is useful for tasks that can tolerate reusing IPs, especially with a limited server pool. A longer duration is better if a service restricts access from the same IP over an extended period.
+</details>
+
+<details>
+<summary><strong>Tip: Keep Existing Connection on Session Start</strong></summary>
+
+By default, `start_session()` disconnects any active VPN connection to begin from a clean state.
+
+If you prefer to keep your current connection (for example, to avoid interruptions with Kill Switch workflows), disable this behavior either during interactive setup, or override it in code:
+
+```python
+switcher = VpnSwitcher(auto_disconnect_on_start=False)
+```
+
+When auto-disconnect is disabled and you are already connected, the switcher uses controller status (connected server) and skips that server on initial pool selection to avoid immediate reuse.
+
 </details>
 
 <details>

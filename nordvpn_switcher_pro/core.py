@@ -19,7 +19,7 @@ class VpnSwitcher:
     rotating connections, and terminating the session gracefully.
     """
 
-    def __init__(self, settings_path: str = "nordvpn_settings.json", force_setup: bool = False, cache_expiry_hours: int = 24, custom_exe_path: str = None, clear_server_cache: bool = False):
+    def __init__(self, settings_path: str = "nordvpn_settings.json", force_setup: bool = False, cache_expiry_hours: int = 24, custom_exe_path: str = None, clear_server_cache: bool = False, auto_disconnect_on_start: bool | None = None):
         """
         Creates a VpnSwitcher to automate NordVPN server connections.
 
@@ -75,6 +75,12 @@ class VpnSwitcher:
                 `settings_path`. This is useful if you want to force the
                 switcher to treat all servers as unused on startup.
                 Defaults to `False`.
+            auto_disconnect_on_start (bool | None, optional): Overrides whether
+                `start_session()` disconnects any existing VPN connection before
+                preparing the session. If `None`, the value from your saved
+                setup (`connection_criteria['auto_disconnect_on_start']`) is
+                used. Existing settings files default to `True` when missing.
+                Defaults to `None`.
         """
         self.settings_path = settings_path
         # Detect platform for fake-useragent restriction and controller setup
@@ -99,6 +105,7 @@ class VpnSwitcher:
                 raise UnsupportedPlatformError(f"Platform '{_os}' is not supported. {_message}")
         self.api_client = NordVpnApiClient(fakeua_os)
         self.settings = self._load_or_create_settings(force_setup, cache_expiry_hours, custom_exe_path)
+        self._auto_disconnect_on_start_override = auto_disconnect_on_start
 
         # Optionally clear the used-servers cache on startup.
         if clear_server_cache:
@@ -127,6 +134,7 @@ class VpnSwitcher:
         # Geo-rotation state
         self._server_loc_lookup: Dict = {}
         self._last_connected_loc_id: int | None = None
+        self._startup_connected_server: str | None = None
 
     def _get_or_create_controller(self):
         """
@@ -154,7 +162,7 @@ class VpnSwitcher:
         This method prepares the switcher for active use. It performs several
         key actions:
         - Establishes control over the NordVPN application.
-        - Disconnects from any pre-existing VPN connection to ensure a clean state.
+                - Optionally disconnects from any pre-existing VPN connection (enabled by default).
         - Records your initial public IP address to verify future changes.
         - Fetches and prepares the initial list of servers that match your
           configured criteria.
@@ -168,7 +176,14 @@ class VpnSwitcher:
             self._controller = self._get_or_create_controller()
             self.api_client.register_dns_flusher(self._controller.flush_dns_cache)
             self._initialize_windows_status_lookup()
-            self._controller.disconnect()
+            if self._should_auto_disconnect_on_start():
+                if self._is_controller_connected():
+                    self._controller.disconnect()
+                else:
+                    print("\x1b[36mInfo: Startup disconnect enabled, but VPN is already disconnected.\x1b[0m")
+            else:
+                print("\x1b[36mInfo: Startup auto-disconnect disabled. Keeping current VPN connection state.\x1b[0m")
+                self._remember_current_connected_server()
         else:
             raise ConfigurationError("No VPN controller available for your platform")
         
@@ -379,6 +394,52 @@ class VpnSwitcher:
             controller.set_server_ip_lookup(servers)
         except ApiClientError as e:
             print(f"\x1b[33mWarning: Failed to initialize Windows IP status lookup: {e}\x1b[0m")
+
+    def _should_auto_disconnect_on_start(self) -> bool:
+        """
+        Returns whether startup should disconnect an existing VPN connection.
+
+        Priority:
+        1. Explicit constructor override (`auto_disconnect_on_start`).
+        2. Saved setup value in `connection_criteria`.
+        3. Backward-compatible default (`True`).
+        """
+        if self._auto_disconnect_on_start_override is not None:
+            return bool(self._auto_disconnect_on_start_override)
+
+        criteria = self.settings.connection_criteria or {}
+        return bool(criteria.get("auto_disconnect_on_start", True))
+
+    def _is_controller_connected(self) -> bool:
+        """Best-effort check whether the controller currently reports a connected state."""
+        try:
+            status = (self._controller.get_status() or "").strip().lower()
+        except Exception:
+            return False
+        return status == "connected" or ("connected" in status and "disconnected" not in status)
+
+    def _remember_current_connected_server(self):
+        """
+        Stores current connected server hostname/name for start-of-session skip logic.
+
+        This is only used when startup auto-disconnect is disabled.
+        """
+        self._startup_connected_server = None
+        if not self._is_controller_connected():
+            return
+
+        snapshot = {}
+        try:
+            snapshot = self._controller.get_status_full() or {}
+        except Exception:
+            snapshot = {}
+
+        connected_server = snapshot.get("current server") or self._controller.get_connected_server()
+        if isinstance(connected_server, str) and connected_server.strip():
+            self._startup_connected_server = connected_server.strip().lower()
+            print("\x1b[36mInfo: Current connected server captured from controller status and will be skipped on first pool build.\x1b[0m")
+        else:
+            print("\x1b[33mWarning: Could not read current server from controller status. First rotation may reconnect to the same server.\x1b[0m")
 
     def terminate(self, close_app: bool = False):
         """
@@ -1207,6 +1268,16 @@ class VpnSwitcher:
             if server_id in self.settings.used_servers_cache:
                 if (now - self.settings.used_servers_cache[server_id]) < self.settings.cache_expiry_seconds:
                     continue
+
+            # If startup auto-disconnect is disabled and a server is already connected,
+            # skip that server candidate to avoid immediate reuse.
+            if self._startup_connected_server:
+                startup_server = self._startup_connected_server
+                hostname = (server.get('hostname') or '').strip().lower()
+                server_name = (server.get('name') or '').strip().lower()
+                if startup_server == hostname or startup_server == server_name:
+                    continue
+
             filtered.append(server)
 
         # --- Handle sequential rotation exhaustion ---

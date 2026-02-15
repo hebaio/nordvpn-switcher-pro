@@ -356,6 +356,17 @@ def prompt_special_server_retry() -> int:
         return 5
 
 
+def prompt_auto_disconnect_on_start() -> bool:
+    """Asks whether start_session should disconnect any existing VPN connection."""
+    clear_screen()
+    return questionary.confirm(
+        "Disconnect current VPN connection when starting a new session?",
+        default=True,
+        style=get_custom_style(),
+        instruction="(Recommended for a clean start; disable if you rely on Kill Switch continuity)"
+    ).ask()
+
+
 def get_user_criteria(api_client) -> tuple[Dict[str, Any], List[Dict]]:
     """
     Guides the user through the entire interactive setup process.
@@ -544,6 +555,10 @@ def get_user_criteria(api_client) -> tuple[Dict[str, Any], List[Dict]]:
     # Final validation to ensure a strategy was selected where needed
     if main_choice != 'special' and not criteria.get('strategy'):
         raise ConfigurationError("Connection strategy was not selected. Aborting setup.")
+
+    auto_disconnect = prompt_auto_disconnect_on_start()
+    _handle_cancel(auto_disconnect)
+    criteria['auto_disconnect_on_start'] = bool(auto_disconnect)
 
     return criteria, countries
 
